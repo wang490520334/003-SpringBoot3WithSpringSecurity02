@@ -65,7 +65,7 @@ public class SecurityConfig {
                 // 公開網址 (登入頁等) 直接放行
                 .requestMatchers("/api/auth/login", "/public/**").permitAll()
                 
-                // 🟢 其餘所有網址，全部丟給我們寫的 UrlAuthorizationManager 比對！
+                // 🟢 其餘所有網址，全部丟給我們寫的 3. UrlAuthorizationManager 比對！
                 .anyRequest().access(urlAuthorizationManager)
             );
 
