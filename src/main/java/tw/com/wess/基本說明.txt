@@ -1,0 +1,83 @@
+*.本範例為了示範使用 Spring Security 做權限驗證
+	示範不把權限 @Secured("ROLE_ADMIN") 寫死在 Controller 
+	而是透過 DB 載入使用者有的權限 (假設DB存在 User, UserRoleMapping, Role, RolePermissionMapping, Permission 等 TABLE 對應出 User 所有的權限) 
+	用DB動態的使用者權限來欄截判斷
+	
+0.先新生一個 ApiController 基本方法
+
+0. 安全配置總成 (SecurityConfig)，如
+	tw.com.wess.security.config.SecurityConfig
+	預設先撰寫
+		@Configuration
+		@EnableWebSecurity
+		public class SecurityConfig {
+		
+		    @Bean
+		    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		        http
+		            .csrf(csrf -> csrf.disable()) // 開發階段先關閉 CSRF 防護
+		            .authorizeHttpRequests(auth -> auth
+		                .anyRequest().permitAll() // 🟢 關鍵：允許所有請求無條件通過！
+		            );
+		        return http.build();
+		    }
+		}
+	先測試所有API能不能呼叫
+		http://localhost:8080/api/users
+		http://localhost:8080/api/admins
+		http://localhost:8080/api/auth/login
+	不擋任何權限，讓所有請求通過，否則引用 spring-boot-starter-security 這個依賴，
+	即便你一行 SecurityConfig 的程式碼都還沒寫，Spring Boot 就會認為：「既然你引入了保全系統，那我就預設幫你把整棟大樓的每一個房間（API 網址）全部上鎖！」	
+	在呼叫任何路徑時就會跳出 HTTP Basic Auth 帳密框	
+	
+1.寫一隻 Service 負責查詢特定使用者的權限 ，如
+	tw.com.wess.service.UserPermissionService	
+	
+2. 每次請求(Filter 層)，攔截 Token(Bearer) 抓出使用者資料(或透過 session 抓使用者資料)，並透過 1. Service 抓取賦予使用者權限(List<SimpleGrantedAuthority>)，如
+	tw.com.wess.security.filter.TokenAuthenticationFilter
+		
+3. 授權管理器 (AuthorizationManager) ===> 之後丟給 Spring Security 用
+	如: tw.com.wess.security.manager.UrlAuthorizationManager
+	
+4.安全配置總成 (SecurityConfig) 進行權限控制
+	如: tw.com.wess.security.config.SecurityConfig
+	在內註冊(注入 2.TokenAuthenticationFilter 及 3.UrlAuthorizationManager)
+	每次請求 SpringSecurity 都會拿
+		2.TokenAuthenticationFilter ====> 抓取使用者資訊，並從資料庫(1.UserPermissionService)撈取使用者權限
+		3.UrlAuthorizationManager ====> 用來驗證使用者是否有權限
+	補 : 2.TokenAuthenticationFilter 會傳 ----> UsernamePasswordAuthenticationToken -----> 給 3.UrlAuthorizationManager !!!!!!!!!!
+		把權限清單包在 UsernamePasswordAuthenticationToken 裡面!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	測試
+		http://localhost:8080/api/auth/login
+		過
+		
+		http://localhost:8080/api/users
+		不過
+		
+		http://localhost:8080/api/admins
+		不過
+		
+		http://localhost:8080/api/users
+		Authorization : Bearer admin
+		過
+		
+		http://localhost:8080/api/admins
+		Authorization : Bearer admin
+		過
+		
+		http://localhost:8080/api/users
+		Authorization : Bearer wess
+		過
+		
+		http://localhost:8080/api/admins
+		Authorization : Bearer wess
+		不過	
+	
+5.當沒有權限時，Spring 預設會回應一個空白的 403 status code
+	如果想客製化 403 回應
+	A.實作 AccessDeniedHandler ，如 tw.com.wess.security.handler.CustomAccessDeniedHandler
+		及
+		實作 AuthenticationEntryPoint，如 tw.com.wess.security.handler.CustomAuthenticationEntryPoint
+	B.於 SecurityConfig 掛載 
+	
+	
